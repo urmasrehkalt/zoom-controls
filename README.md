@@ -118,9 +118,10 @@ Run checks from the repository root:
 ./scripts/build-app.sh
 ./scripts/test-icons.sh
 python3 scripts/test-readme.py
+python3 scripts/test-privacy.py
 ```
 
-The documentation check requires Python 3. Core tests run as a Swift executable and do not require XCTest, a running Zoom instance, or production services. The app build uses a temporary Swift build directory and writes its bundle to `dist/`.
+The documentation and privacy checks require Python 3. The privacy check scans tracked files and branch/tag history for personal references, allowing the existing bundle identifier for installation compatibility. Core tests run as a Swift executable and do not require XCTest, a running Zoom instance, or production services. The app build uses a temporary Swift build directory and writes its bundle to `dist/`.
 
 Run the icon checks after building; they inspect the app bundle and menu-bar icon rendering.
 
