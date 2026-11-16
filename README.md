@@ -2,24 +2,19 @@
 
 A small native macOS menu-bar app for moving Zoom's screen-sharing controls out of the way and bringing them back.
 
-Zoom Controls uses macOS Accessibility APIs to move the sharing toolbar outside the visible displays, remembers its original position, and restores it on command. The installed app and its menu-bar entry are named **Zooom**.
+Zoom Controls hides Zoom windows automatically when screen sharing starts, or on command. It can hide the whole Zoom application or move selected sharing controls and the camera panel outside the visible displays, retaining their positions for restoration. The installed app is named **Zooom** and appears as a window icon in the menu bar.
 
 **Experimental:** automated tests cover window geometry and recovery logic. A complete live Zoom screen-sharing session has not been verified. Try it in a disposable meeting before relying on it.
 
-## Available versions
+## Features
 
-This README describes the code on `main`. Additional functionality is being developed separately:
+- **Control + Option + Z** toggles hiding and restoring the selected windows.
+- Automatic hiding starts when an English sharing toolbar or compact sharing strip is detected.
+- Hide all Zoom windows, or select the full sharing toolbar, compact strip and camera panel independently.
+- Menu preferences persist locally between launches.
+- A manual reveal keeps windows visible until another shortcut press or the next detected sharing session.
 
-| Behavior | `main` | `feature/1-standalone` |
-| --- | --- | --- |
-| Global hide / restore shortcut | **Control + Escape** | **Control + Option + Z** |
-| What can be hidden | One matching sharing toolbar | All Zoom windows or selected sharing controls and camera panel |
-| Automatic hiding when sharing starts | No | Enabled by default |
-| Compact sharing strip | Not supported | Supported by detection logic |
-| Saved menu preferences | No | Yes |
-| App and menu-bar icons | Text menu-bar entry | Custom icons |
-
-The development branch also includes further window-restoration fixes. These changes are not yet merged into `main`; its live Zoom behavior still needs verification.
+Automatic hiding and **All Zoom windows (including camera)** are enabled by default. Launching the helper during an active sharing session can therefore hide Zoom windows as soon as sharing is detected.
 
 ## Requirements
 
@@ -57,36 +52,41 @@ Before replacing an existing installation, choose **Restore and quit**. Rebuildi
 ## Use
 
 1. Start a disposable Zoom meeting and begin sharing your screen.
-2. Make the full floating sharing toolbar visible, including its English **Stop share** and **Pause share** controls.
-3. Press **Control + Escape** or choose **Hide / restore controls** in the **Zooom** menu.
-4. Press the shortcut again to restore the toolbar.
-5. Choose **Restore and quit** when finished.
+2. Make Zoom's sharing controls visible. The helper detects the English full toolbar or compact sharing strip and hides all Zoom windows by default.
+3. Press **Control + Option + Z** or choose **Hide / restore selected windows** in the menu to reveal them. Press it again to hide them.
+4. To hide only selected controls, turn off **All Zoom windows (including camera)** and choose the desired toolbar, strip or camera options. Changing preferences restores windows first; the new selection applies on the next hide.
+5. To use only manual control, turn off **Hide automatically when sharing starts**.
+6. Choose **Restore and quit** when finished.
 
 | Menu item | Action |
 | --- | --- |
-| Hide / restore controls | Toggle the detected toolbar between its original position and an offscreen position |
-| Restore controls | Attempt to bring a previously hidden toolbar back |
-| Restore and quit | Restore the toolbar, then quit; remain running if restoration fails |
+| Hide / restore selected windows | Toggle visibility using the current window selection |
+| Restore windows | Attempt to restore the hidden Zoom application and any parked windows |
+| Hide automatically when sharing starts | Enable or disable automatic hiding |
+| All Zoom windows (including camera) | Hide the Zoom application and any remaining visible Zoom windows |
+| Sharing toolbar / Small Stop share strip / Camera video panel | Choose individual window types when all-windows mode is off |
+| Restore and quit | Restore windows, then quit; remain running if restoration fails |
 
 The menu's first line reports the current status. Ordinary **Escape** is not registered, intercepted, suppressed, or synthesized by the helper. The app does not click meeting controls or send keyboard input to Zoom.
 
 ## Recovery and troubleshooting
 
-Window movement can be rejected by macOS or undone by Zoom. The helper verifies that a hidden toolbar is outside all displays and retains its saved position if restoration fails. Display changes trigger an attempt to restore the toolbar onto an available display.
+Window movement can be rejected by macOS or undone by Zoom. All-windows mode hides the Zoom application first, then attempts to move any remaining visible windows offscreen. Individual mode moves only the selected window types. The helper verifies offscreen movement and retains recovery state if restoration fails. Display changes trigger an attempt to restore windows onto an available display.
 
 | Status or symptom | What to check |
 | --- | --- |
 | Accessibility permission required | Enable the installed Zooom app in Accessibility settings |
-| No unique English sharing toolbar found | Share your screen and show the full English toolbar; `main` requires exactly one movable match and does not recognize the compact strip |
-| Control + Escape is unavailable | Use the menu controls and check whether another app has registered the shortcut |
-| Parking failed | Check the toolbar in Zoom; movement may have been refused or constrained |
-| Restore failed | Keep the helper running and retry **Restore controls** before quitting or changing permissions |
+| No accessible Zoom windows | Check that Zoom is running and Accessibility permission is enabled |
+| No matching visible windows | Show the sharing controls and check the menu's window selection; detection expects English control labels |
+| Shortcut unavailable | Use the menu controls and check whether another app has registered Control + Option + Z |
+| Could not hide one or more windows | Movement may have been refused or constrained; use **Restore windows** to recover |
+| Restore failed | Keep the helper running and retry **Restore windows** before quitting or changing permissions |
 
-Use **Restore controls** before revoking Accessibility permission. Recovery state exists only in memory: force-quitting the helper, a crash, or revoking permission can leave a toolbar offscreen.
+Use **Restore windows** before revoking Accessibility permission. Recovery state exists only in memory: force-quitting the helper, a crash, or revoking permission can leave windows hidden or offscreen.
 
 If recovery fails, try Zoom's own control for showing its floating meeting controls. Its ability to recover an offscreen toolbar is unverified. If needed, finish the meeting normally through Zoom's main window, then restart Zoom. Avoid restarting Zoom during an active meeting just to recover the toolbar.
 
-On `main`, a toolbar larger than the available display area may not satisfy the restoration check. The helper will retain recovery state and refuse a normal quit in that situation.
+When hidden Zoom windows disappear from Accessibility's window list, the helper retains recovery state. It cannot reliably detect a new sharing session while those windows remain absent; use **Restore windows** if needed. Camera-panel detection and different Zoom toolbar layouts still require live verification.
 
 ### Remove the app
 
@@ -97,7 +97,7 @@ Choose **Restore and quit**, remove the installed `Zooom.app`, and remove its en
 - All processing takes place locally. The app makes no network requests and includes no analytics or telemetry.
 - Accessibility access is used to inspect Zoom's window geometry and control labels, and to move its windows.
 - The helper does not capture screen images, audio, video, or meeting transcripts. It does not request Screen Recording or Input Monitoring permission.
-- The standalone development branch stores menu preferences locally in UserDefaults. Window recovery state is not persisted across launches.
+- Menu preferences are stored locally in UserDefaults. Window recovery state is not persisted across launches.
 
 Accessibility is a broad macOS permission; the implementation limits its window inspection to the Zoom application. The bundle identifier is retained for compatibility with existing installations.
 
@@ -116,12 +116,13 @@ Run checks from the repository root:
 ```sh
 ./scripts/test.sh
 ./scripts/build-app.sh
+./scripts/test-icons.sh
 python3 scripts/test-readme.py
 ```
 
 The documentation check requires Python 3. Core tests run as a Swift executable and do not require XCTest, a running Zoom instance, or production services. The app build uses a temporary Swift build directory and writes its bundle to `dist/`.
 
-On `feature/1-standalone`, also run `./scripts/test-icons.sh` after building. That script and its icon assets do not exist on `main` yet.
+Run the icon checks after building; they inspect the app bundle and menu-bar icon rendering.
 
 ### Live integration checklist
 
@@ -134,7 +135,7 @@ Automated checks cannot establish that a particular Zoom version permits offscre
 - [ ] Display changes and disconnection allow the toolbar to be recovered.
 - [ ] Failed movement, missing permission and shortcut conflicts are handled visibly.
 - [ ] **Restore and quit** restores the toolbar before closing.
-- [ ] For the standalone branch, automatic hiding, individual window selections, saved preferences and new sharing sessions behave as expected.
+- [ ] Automatic hiding, individual window selections, saved preferences and new sharing sessions behave as expected.
 
 ### Contributing
 

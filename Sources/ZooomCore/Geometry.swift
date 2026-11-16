@@ -5,6 +5,13 @@ public enum Geometry {
         guard let right = screens.map(\.maxX).max(), let bottom = screens.map(\.maxY).max() else { return nil }
         return CGPoint(x: right + 100, y: bottom + 100)
     }
+    public static func isRestored(_ actual: CGRect, target: CGRect, screens: [CGRect]) -> Bool {
+        // Oversized windows cannot fit entirely; verify the requested origin and reachable top edge.
+        guard abs(actual.minX - target.minX) <= 2, abs(actual.minY - target.minY) <= 2 else { return false }
+        let handle = CGRect(x: actual.minX, y: actual.minY,
+                            width: min(actual.width, 80), height: min(actual.height, 20))
+        return screens.contains { $0.contains(handle) }
+    }
     public static func restoreFrame(_ original: CGRect, screens: [CGRect]) -> CGRect? {
         guard let screen = screens.first(where: { $0.contains(original) }) ?? screens.first else { return nil }
         let x = min(max(original.minX, screen.minX), max(screen.minX, screen.maxX - original.width))
@@ -28,7 +35,7 @@ public final class VisibilityController {
     public func restore(screens: [CGRect], move: (CGPoint) -> CGRect?) -> Bool {
         guard let original = savedFrame else { return true }
         guard let target = Geometry.restoreFrame(original, screens: screens),
-              let actual = move(target.origin), screens.contains(where: { $0.contains(actual) }) else { return false }
+              let actual = move(target.origin), Geometry.isRestored(actual, target: target, screens: screens) else { return false }
         savedFrame = nil
         return true
     }

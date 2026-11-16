@@ -1,9 +1,11 @@
 import AppKit
+import ZooomCore
 import ApplicationServices
 
 struct ZoomWindow {
     let element: AXUIElement
     let frame: CGRect
+    let kind: ZoomWindowKind
 }
 
 enum Accessibility {
@@ -23,8 +25,10 @@ enum Accessibility {
         return CGRect(origin: point, size: size)
     }
     // English Zoom only until other locales are verified. Never match the meeting window by size alone.
-    static func sharingButtons(_ element: AXUIElement, depth: Int = 0) -> Set<String> {
-        guard depth < 6 else { return [] }
+    static func sharingButtons(_ element: AXUIElement, deadline: Date, remaining: inout Int, depth: Int = 0) -> Set<String> {
+        guard depth < 6, remaining > 0, Date() < deadline else { return [] }
+        remaining -= 1
+        AXUIElementSetMessagingTimeout(element, 0.03)
         var result = Set<String>()
         if value(element, kAXRoleAttribute) as? String == kAXButtonRole {
             for key in [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute] {
@@ -32,28 +36,63 @@ enum Accessibility {
             }
         }
         for child in value(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
-            result.formUnion(sharingButtons(child, depth: depth + 1))
+            guard remaining > 0, Date() < deadline else { break }
+            result.formUnion(sharingButtons(child, deadline: deadline, remaining: &remaining, depth: depth + 1))
         }
         return result
     }
-    static func toolbar() -> ZoomWindow? {
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "us.zoom.xos").first else { return nil }
-        let root = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(root, 0.5)
-        let windows = value(root, kAXWindowsAttribute) as? [AXUIElement] ?? []
-        let candidates = windows.compactMap { window -> ZoomWindow? in
-            guard let rect = frame(window), rect.width >= 250, rect.height >= 30,
-                  rect.height <= 220,
-                  value(window, "AXIdentifier") as? String != "zm.meeting.window.main" else { return nil }
-            let buttons = sharingButtons(window)
-            guard buttons.contains("stop share"), buttons.contains("pause share") else { return nil }
-            var settable = DarwinBoolean(false)
-            guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &settable) == .success,
-                  settable.boolValue else { return nil }
-            return ZoomWindow(element: window, frame: rect)
-        }
-        return candidates.count == 1 ? candidates[0] : nil
+    static var app: NSRunningApplication? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "us.zoom.xos").first
     }
+
+    // nil denotes an unreadable snapshot, not the end of sharing.
+    static func windows(classify: Bool = true) -> [ZoomWindow]? {
+        guard let app else { return [] }
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(root, 0.03)
+        guard let elements = value(root, kAXWindowsAttribute) as? [AXUIElement] else { return nil }
+        let deadline = Date().addingTimeInterval(0.15)
+        var remaining = 150
+        var result: [ZoomWindow] = []
+        for window in elements {
+            guard Date() < deadline else { return nil }
+            AXUIElementSetMessagingTimeout(window, 0.03)
+            guard let rect = frame(window) else { continue }
+            let identifier = value(window, "AXIdentifier") as? String ?? ""
+            let standard = value(window, kAXSubroleAttribute) as? String == kAXStandardWindowSubrole
+            let inspectButtons = classify && identifier != "zm.meeting.window.main" &&
+                !(standard && rect.height > 220)
+            let buttons = inspectButtons ?
+                sharingButtons(window, deadline: deadline, remaining: &remaining) : Set<String>()
+            guard remaining > 0, Date() < deadline else { return nil }
+            let kind: ZoomWindowKind
+            if identifier != "zm.meeting.window.main",
+               SharingToolbar.matches(rect.size, buttons: buttons) {
+                kind = rect.height < 30 ? .strip : .toolbar
+            } else if buttons.contains(where: {
+                $0.contains("hide video panel") || $0.contains("show small active speaker video")
+                    || $0.contains("show thumbnail video")
+            }) {
+                kind = .camera
+            } else {
+                kind = .other
+            }
+            result.append(ZoomWindow(element: window, frame: rect, kind: kind))
+        }
+        return result
+    }
+
+    static func visibleFrames() -> [CGRect]? {
+        guard let app,
+              let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        return info.compactMap { entry in
+            guard entry[kCGWindowOwnerPID as String] as? Int == Int(app.processIdentifier),
+                  let bounds = entry[kCGWindowBounds as String] as? [String: Any] else { return nil }
+            return CGRect(dictionaryRepresentation: bounds as CFDictionary)
+        }
+    }
+
     static func move(_ window: AXUIElement, to point: CGPoint) -> CGRect? {
         var position = point
         guard let value = AXValueCreate(.cgPoint, &position),

@@ -45,4 +45,48 @@ check(!controller.hide(frame: oversized, screens: [], move: move), "No screens p
 let remote = CGRect(x: -1400, y: -850, width: 900, height: 100)
 let restored = Geometry.restoreFrame(remote, screens: smaller)!
 check(smaller[0].contains(restored), "Removed negative-coordinate display recovers on primary")
+let strip = CGSize(width: 354, height: 22)
+check(SharingToolbar.matches(strip, buttons: ["stop share", "dock to top"]), "Recognize compact strip")
+check(!SharingToolbar.matches(strip, buttons: ["stop share"]), "Reject unrelated strip")
+check(SharingToolbar.matches(original.size, buttons: ["stop share", "pause share"]), "Recognize full toolbar")
+check(!SharingToolbar.matches(CGSize(width: 1200, height: 800), buttons: ["stop share", "pause share"]), "Reject meeting-sized window")
+var prefs = HidePreferences()
+check(prefs.automatic && prefs.allWindows, "Defaults automatically hide all windows")
+check(prefs.includes(.camera) && prefs.includes(.other), "All includes camera and other windows")
+prefs.allWindows = false
+prefs.camera = false
+check(!prefs.includes(.camera) && !prefs.includes(.other), "Selective scope excludes unselected windows")
+check(prefs.includes(.strip) && prefs.includes(.toolbar), "Selected sharing controls included")
+let encoded = try! JSONEncoder().encode(prefs)
+let decoded = try! JSONDecoder().decode(HidePreferences.self, from: encoded)
+check(!decoded.camera && !decoded.allWindows, "Preferences survive persistence")
+var session = SharingSession()
+check(!session.update(sharing: false, automatic: true), "No auto hide before sharing")
+check(session.update(sharing: true, automatic: true), "Auto hide at sharing start")
+session.reveal()
+check(!session.update(sharing: true, automatic: true) && !session.hidden, "Manual reveal survives observation")
+_ = session.update(sharing: false, automatic: true)
+check(session.sharing, "Transient missing toolbar does not end session")
+_ = session.update(sharing: true, automatic: true)
+check(!session.hidden, "Transient absence does not undo manual reveal")
+for _ in 0..<3 { _ = session.update(sharing: false, automatic: true) }
+check(!session.sharing, "Sharing end confirmed")
+check(session.update(sharing: true, automatic: true), "Next session hides again")
+session.toggle()
+check(!session.hidden, "Shortcut reveals")
+session.toggle()
+check(session.hidden, "Shortcut hides again")
+var manual = SharingSession()
+check(!manual.update(sharing: true, automatic: false) && !manual.hidden, "Automatic mode can be disabled")
+let largeController = VisibilityController()
+let largeWindow = CGRect(x: 0, y: 39, width: 1710, height: 1017)
+let workArea = [CGRect(x: 0, y: 39, width: 1710, height: 978)]
+var largeActual = largeWindow
+func moveLarge(_ point: CGPoint) -> CGRect? {
+    largeActual.origin = point
+    return largeActual
+}
+check(largeController.hide(frame: largeWindow, screens: workArea, move: moveLarge), "Park tall meeting window")
+check(largeController.restore(screens: workArea, move: moveLarge), "Restore window larger than work area")
+check(largeController.savedFrame == nil, "Accessible oversized window releases recovery")
 exit(failures == 0 ? 0 : 1)

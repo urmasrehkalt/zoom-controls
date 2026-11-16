@@ -25,15 +25,18 @@ for block in re.findall(r"```sh\n(.*?)```", readme, re.S):
     for script in re.findall(r"(?:\./|python3 )(scripts/[\w.-]+)", block):
         check((root / script).is_file(), "Documented command: " + script)
 
-check("kVK_Escape" in app and "UInt32(controlKey)" in app
-      and "**Control + Escape**" in readme, "Main shortcut matches implementation")
-for label in ["Restore controls", "Restore and quit", "Hide / restore controls"]:
+check("kVK_ANSI_Z" in app and "UInt32(controlKey | optionKey)" in app
+      and "**Control + Option + Z**" in readme, "Main shortcut matches implementation")
+for label in ["Restore windows", "Restore and quit", "Hide / restore selected windows"]:
     check(label in app and label in readme, "Menu label: " + label)
 check('dist/Zooom.app' in build and 'dist/Zooom.app' in readme,
       "Build output matches installation instructions")
 check('swift-tools-version: 5.9' in package and '.macOS(.v13)' in package
       and 'Swift 5.9' in readme and 'macOS 13' in readme,
       "Requirements match package")
+preferences = (root / "Sources/ZooomCore/SharingSession.swift").read_text()
+check("automatic = true" in preferences and "allWindows = true" in preferences
+      and "are enabled by default" in readme, "Automatic hiding defaults are documented")
 check('complete live Zoom screen-sharing session has not been verified' in readme,
       "Live-validation status is explicit")
 check(not re.search(r"/(?:Users|home)/[^\s/]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", readme),
